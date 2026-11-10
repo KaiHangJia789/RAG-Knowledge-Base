@@ -1,0 +1,188 @@
+"""
+FastAPI 应用入口
+Week5: 新增 PostgreSQL + Redis 生命周期管理
+"""
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from app.api.v1.router import api_v1_router
+from app.api.v1.frontend import router as frontend_router
+from app.cache.connection import RedisClient
+from app.config import settings
+from app.db.connection import Database
+from app.dependencies.auth import init_services
+from app.exceptions.handlers import (
+    AppException,
+    app_exception_handler,
+    general_exception_handler,
+)
+from app.middleware.logging import log_request_middleware
+from app.middleware.timing import timing_middleware
+
+# ─── 日志配置 ──────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("rag_api")
+
+# ─── 全局资源句柄 ──────────────────────────────────────────────
+db = Database()
+redis_client = RedisClient()
+
+
+# ─── 连接辅助（带重试，云服务器网络间歇性抖动） ────────────────
+async def _connect_with_retry(connect_fn, name: str, attempts: int = 3, timeout: int = 5) -> bool:
+    """
+    带重试的连接。云服务器公网网络时通时断（瞬时抖动，恢复很快），
+    短重试能自动扛过大部分瞬时故障。
+
+    Returns:
+        是否连接成功
+    """
+    for i in range(1, attempts + 1):
+        try:
+            await asyncio.wait_for(connect_fn(), timeout=timeout)
+            return True
+        except Exception as e:
+            err = str(e) if str(e) else type(e).__name__   # asyncio.TimeoutError 的 str 为空
+            if i < attempts:
+                logger.warning("   %s 连接失败（第 %d/%d 次）: %s，1 秒后重试...", name, i, attempts, err)
+                await asyncio.sleep(1)
+            else:
+                logger.error("⚠️ %s 连接失败: %s", name, err)
+    return False
+
+
+def _log_index_status() -> None:
+    """把索引状态打进启动日志 —— 没建索引时一眼可见，不用等到提问才发现"""
+    from app.dependencies import auth
+
+    svc = auth._index_service
+    if svc is None:
+        return
+    stats = svc.stats()
+    if stats["vectors"]:
+        logger.info(
+            "   向量索引:   策略=%s, %d 条向量 / %d 个文档（%s）",
+            stats["strategy"], stats["vectors"], stats["documents"], stats["index_path"],
+        )
+    else:
+        logger.warning(
+            "   向量索引:   ⚠️ 空索引（策略=%s）。问答功能不可用，"
+            "请执行: python scripts/build_index.py --strategy %s",
+            stats["strategy"], stats["strategy"],
+        )
+
+
+# ─── 生命周期管理 ──────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    - startup: 初始化 PostgreSQL 连接池 + Redis 连接 + Service 单例
+    - shutdown: 关闭所有连接
+    """
+    # ===== Startup =====
+    logger.info("=" * 60)
+    logger.info("🚀 %s v%s 启动中...", settings.APP_NAME, settings.APP_VERSION)
+
+    # PostgreSQL：连不上只告警，不阻断启动（LLM/前端不依赖 DB）
+    db_ready = await _connect_with_retry(
+        lambda: db.connect(settings.DATABASE_DSN), "PostgreSQL"
+    )
+    if db_ready:
+        logger.info("   PostgreSQL: %s:%s/%s", settings.POSTGRES_HOST, settings.POSTGRES_PORT, settings.POSTGRES_DB)
+
+    # Redis：连不上只告警，不阻断启动（缓存可降级）
+    redis_ready = await _connect_with_retry(
+        lambda: redis_client.connect(settings.REDIS_URL), "Redis"
+    )
+    if redis_ready:
+        logger.info("   Redis:      %s:%s/%s", settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_DB)
+
+    # 服务初始化：DB 就绪才初始化 DocumentService/ParsingService
+    if db_ready:
+        init_services(db, redis_client)
+        logger.info("   服务单例:   已初始化（DocumentService + ParsingService + 解析器）")
+        _log_index_status()
+    else:
+        logger.warning("⚠️ DB 未就绪，跳过 DocumentService/ParsingService 初始化")
+
+    settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info("   上传目录:   %s", settings.UPLOAD_DIR.absolute())
+    logger.info("✅ 应用启动完成（DB=%s Redis=%s）", "✓" if db_ready else "✗", "✓" if redis_ready else "✗")
+    logger.info("=" * 60)
+
+    yield  # ← 应用运行期间
+
+    # ===== Shutdown =====
+    logger.info("=" * 60)
+    logger.info("🛑 %s 正在关闭...", settings.APP_NAME)
+    if redis_ready:
+        await redis_client.disconnect()
+    if db_ready:
+        await db.disconnect()
+    logger.info("✅ 应用已安全关闭")
+    logger.info("=" * 60)
+
+
+# ─── 创建 FastAPI 应用 ─────────────────────────────────────────
+app = FastAPI(
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
+    description=settings.APP_DESCRIPTION,
+    lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    swagger_ui_parameters={
+        "defaultModelsExpandDepth": 1,
+        "docExpansion": "list",
+        "filter": True,
+    },
+)
+
+# ─── 注册中间件 ────────────────────────────────────────────────
+app.middleware("http")(timing_middleware)
+app.middleware("http")(log_request_middleware)
+
+# ─── 注册异常处理器 ────────────────────────────────────────────
+app.add_exception_handler(AppException, app_exception_handler)
+app.add_exception_handler(Exception, general_exception_handler)
+
+# ─── 注册路由 ──────────────────────────────────────────────────
+app.include_router(api_v1_router)
+app.include_router(frontend_router)
+
+
+# ─── API 信息路由 ─────────────────────────────────────────────
+@app.get(
+    "/api/info",
+    summary="API 信息",
+    tags=["系统"],
+)
+async def root():
+    return {
+        "app": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "description": settings.APP_DESCRIPTION,
+        "docs": "/docs",
+        "redoc": "/redoc",
+        "endpoints": {
+            "健康检查": {
+                "GET /health": "基础健康检查",
+                "GET /health/ready": "就绪检查",
+            },
+            "文件上传": {"POST /api/v1/upload": "上传文档"},
+            "文档管理": {
+                "GET /api/v1/documents": "文档列表（Keyset分页+搜索+过滤）",
+                "GET /api/v1/documents/{id}": "获取文档详情（Cache-Aside）",
+                "GET /api/v1/documents/{id}/info": "获取文档元信息",
+                "DELETE /api/v1/documents/{id}": "删除文档",
+            },
+        },
+    }

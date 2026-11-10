@@ -1,0 +1,113 @@
+name: Build and deploy
+
+# 仅手动触发（Actions → Build and deploy → Run workflow）。
+# 推送 master 不再自动部署：ECS 到 GitHub/GHCR 的网络不稳定，自动部署每次都会占用 rag-ecs 失败。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # 测试不通过则不构建、不部署
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -q
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    # ACR 相关 Secret 配置在 production 环境里，job 必须声明该环境才能读到
+    environment: production
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tag
+        id: meta
+        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # 推送使用 ACR 公网地址（GitHub Runner 在公网，连不上 VPC 内网地址）
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          # 关闭 provenance/SBOM 证明：ACR 个人版不支持 OCI attestation manifest，推送会被拒绝
+          provenance: false
+          sbom: false
+          tags: ${{ secrets.ACR_IMAGE_PREFIX }}/backend:${{ steps.meta.outputs.tag }}
+
+      - name: Build and push web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: web/Dockerfile
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ secrets.ACR_IMAGE_PREFIX }}/web:${{ steps.meta.outputs.tag }}
+
+  deploy:
+    needs: build
+    # 自托管 Runner 装在 ECS 本机，直接在本机部署，不再 SSH 连入
+    runs-on: [self-hosted, linux, rag-prod]
+    environment: production
+    # 默认超时为 6 小时，网络卡住时会一直挂着，这里限制在 30 分钟内
+    timeout-minutes: 30
+    env:
+      IMAGE_TAG: ${{ needs.build.outputs.tag }}
+      # ECS 从 ACR 的 VPC 内网地址拉取，走阿里云内网，不经过公网
+      IMAGE_PREFIX: ${{ secrets.ACR_PULL_PREFIX }}
+      ACR_REGISTRY_VPC: ${{ secrets.ACR_REGISTRY_VPC }}
+      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+      DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+    steps:
+      - name: Deploy on ECS
+        run: |
+          set -e
+          cd "$DEPLOY_DIR"
+          # 同步 compose 文件和 migrations。ECS 到 github.com 偶发不通，每次限时 2 分钟，最多重试 3 次；
+          # 仍失败时沿用服务器上已有的 compose 文件继续部署（镜像来自 IMAGE_TAG，与 git 无关）
+          synced=0
+          for i in 1 2 3; do
+            if timeout 120 git pull --ff-only origin master; then synced=1; break; fi
+            echo "git pull 失败，第 $i 次重试..."
+            sleep 15
+          done
+          [ "$synced" = 1 ] || echo "::warning::未能同步仓库，使用服务器上已有的 docker-compose.prod.yml 继续部署"
+          echo "$ACR_PASSWORD" | docker login "$ACR_REGISTRY_VPC" -u "$ACR_USERNAME" --password-stdin
+          export IMAGE_TAG IMAGE_PREFIX
+          # 内网拉取仍可能偶发失败，每次限时 5 分钟，超时则重试；已下载的层会保留
+          for i in 1 2 3 4 5; do
+            timeout 300 docker compose -f docker-compose.prod.yml pull && break
+            [ "$i" = 5 ] && { echo "pull 连续失败 5 次，放弃部署"; exit 1; }
+            echo "pull 失败，第 $i 次重试..."
+            sleep 15
+          done
+          docker compose -f docker-compose.prod.yml up -d
+          docker image prune -f
