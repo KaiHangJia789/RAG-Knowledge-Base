@@ -1,9 +1,14 @@
 """RAG 问答链路的领域模型"""
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from app.services.index_service import IndexHit
+
+
+AnswerStatus = Literal["answered", "partial", "needs_clarification",
+                       "insufficient_evidence", "conflicting_evidence"]
 
 
 class RefusalReason(str, Enum):
@@ -74,6 +79,16 @@ class RagAnswer(BaseModel):
     refused: bool = False
     refusal_reason: RefusalReason | None = None
 
+    answer_status: AnswerStatus | None = None
+    clarifying_questions: list[str] = Field(default_factory=list)
+    retrieval_query: str | None = None
+    query_rewritten: bool = False
+    rewrite_failed: bool = False
+    output_validation_failed: bool = False
+    output_normalized: bool = False
+    # 只含应用定义的错误码，不保存模型原文、Pydantic 输入或异常消息。
+    output_validation_errors: list[str] = Field(default_factory=list)
+
     # ── 可观测性 ──
     config: RetrievalConfig | None = None
     retrieved_count: int = 0                    # 检索命中数（过滤前）
@@ -85,7 +100,7 @@ class RagAnswer(BaseModel):
     citation_validity: float = 1.0              # 引用编号有效率
     invalid_citations: list[int] = Field(default_factory=list)
     latency_ms: float = 0.0
-    llm_called: bool = False                    # 是否真的调了 LLM（拒答时为 False）
+    llm_called: bool = False                    # 是否调用了改写或回答模型（拒答也可能为 True）
     prompt_tokens: int = 0
     completion_tokens: int = 0
     trace_id: str | None = None

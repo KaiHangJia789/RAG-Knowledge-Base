@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.rag.models import Citation, RefusalReason
+from app.rag.models import AnswerStatus, Citation, RefusalReason
 
 
 class SessionMessage(BaseModel):
@@ -17,6 +17,8 @@ class SessionMessage(BaseModel):
     refused: bool = False
     refusal_reason: RefusalReason | None = None
     trace_url: str | None = None
+    answer_status: AnswerStatus | None = None
+    clarifying_questions: list[str] = Field(default_factory=list)
 
 
 class SessionSummary(BaseModel):

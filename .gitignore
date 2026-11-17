@@ -57,5 +57,11 @@ temp/
 # Week10: FAISS 索引是二进制产物，不该入库（语料与评测集必须入库）
 data/index/
 
-# 本地个人配置，不随仓库发布
+# 本地浏览器验证与支持评测报告（可能含问题和历史）
+.playwright-cli/
+output/playwright/
+reports/support*.jsonl
+
+# Public repository: local configuration and personal materials
 .claude/
+docs/internship/

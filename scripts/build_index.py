@@ -20,7 +20,7 @@
     - 用户上传的文档（chunks 表里已有）自动被索引
     - 索引与数据库天然一致（索引直接由 chunks 表驱动）
 
-  「入库」（ingest_corpus）才需要物理文件，且只处理 data/corpus/ 语料目录；
+  「入库」（ingest_corpus）才需要物理文件，且只处理显式指定的语料目录（默认 data/corpus/）；
   用户上传的文档由 upload 流程入库，不经过这里。
 """
 import argparse
@@ -94,6 +94,10 @@ async def ensure_document(db: Database, user_id: str, corpus_file: Path, text: s
     if row:
         return str(row["id"])
 
+    project_root = Path(__file__).resolve().parents[1]
+    resolved = corpus_file.resolve()
+    storage_path = (resolved.relative_to(project_root).as_posix()
+                    if resolved.is_relative_to(project_root) else resolved.as_posix())
     now = datetime.now(UTC)
     row = await db.fetch_one(
         """
@@ -104,7 +108,7 @@ async def ensure_document(db: Database, user_id: str, corpus_file: Path, text: s
         RETURNING id
         """,
         user_id, filename, corpus_file.suffix.lower(),
-        len(text.encode("utf-8")), f"data/corpus/{filename}", now,
+        len(text.encode("utf-8")), storage_path, now,
     )
     return str(row["id"])
 

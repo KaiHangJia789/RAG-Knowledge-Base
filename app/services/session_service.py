@@ -4,8 +4,7 @@
 每轮问答写入两条消息：用户问题 + 助手回答（含完整引用）。
 引用保存完整 chunk 文本，文档被删除或索引重建后，历史仍能展示原文。
 
-当前没有登录，所有会话归属于默认用户（config.DEFAULT_USERNAME）。
-登录上线后，user_id 改由请求上下文提供，仓库层的 user_id 过滤不需要改。
+HTTP 请求传入登录用户，仓库层始终按 user_id 过滤。内部脚本可使用默认演示用户。
 """
 import asyncio
 import json
@@ -145,7 +144,11 @@ class SessionService:
             if asst_msg.get("refused"):
                 continue
             history.append({"role": "user", "content": user_msg["content"]})
-            history.append({"role": "assistant", "content": asst_msg["content"]})
+            content = asst_msg["content"]
+            questions = asst_msg.get("clarifying_questions") or []
+            if questions:
+                content += "\n" + "\n".join(questions)
+            history.append({"role": "assistant", "content": content})
         return history
 
     # ═══════════════════════════════════════════════════════════
@@ -185,6 +188,8 @@ class SessionService:
                 refused=answer.refused,
                 refusal_reason=answer.refusal_reason,
                 trace_url=answer.trace_url,
+                answer_status=answer.answer_status,
+                clarifying_questions=answer.clarifying_questions,
             ).model_dump(mode="json"),
         ]
         title = question.strip()[:TITLE_MAX_LEN] or DEFAULT_TITLE

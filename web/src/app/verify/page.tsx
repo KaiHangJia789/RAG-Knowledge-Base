@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { verifyEmail } from "@/lib/api";
+import { AuthLayout } from "@/components/auth-layout";
 
 type State =
   | { status: "pending" }
@@ -26,51 +27,32 @@ export default function VerifyPage() {
   }, []);
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#fafafa",
-        color: "#171717",
-        padding: 24,
-      }}
+    <AuthLayout
+      title={state.status === "ok" ? "邮箱验证成功" : state.status === "error" ? "验证未完成" : "验证你的邮箱"}
+      subtitle="完成验证，让你的知识空间准备就绪。"
     >
-      <div
-        style={{
-          width: 340,
-          padding: 24,
-          background: "#fff",
-          border: "1px solid #e5e5e5",
-          borderRadius: 8,
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
-        <h1 style={{ fontSize: 20 }}>邮箱验证</h1>
-
-        {state.status === "pending" && <p>正在验证…</p>}
+      <div style={{ display: "grid", gap: 20 }}>
+        {state.status === "pending" && <p role="status" className="muted">正在验证邮箱，请稍候…</p>}
 
         {state.status === "ok" && (
           <>
-            <p style={{ color: "#1a7f37" }}>邮箱验证成功，现在可以登录了。</p>
-            <Link href="/login">前往登录</Link>
+            <p role="status" className="success-message">邮箱已验证，现在可以登录了。</p>
+            <Link href="/login" className="primary-button">前往登录</Link>
           </>
         )}
 
         {state.status === "error" && (
           <>
-            <p role="alert" style={{ color: "#b00020" }}>
+            <p role="alert" className="error-message">
               {state.message}
             </p>
-            <p style={{ fontSize: 14 }}>
-              链接可能已过期或已使用。可以到 <Link href="/login">登录页</Link> 重新发送验证邮件。
+            <p className="muted">
+              链接可能已过期或已使用。请返回登录页，重新发送验证邮件。
             </p>
+            <Link href="/login" className="secondary-button">返回登录</Link>
           </>
         )}
       </div>
-    </main>
+    </AuthLayout>
   );
 }

@@ -1,14 +1,17 @@
-# RAG 知识库问答
+# RAG Knowledge Base · 技术支持知识助手
 
-上传 PDF / Markdown / TXT 文档，就能基于文档提问。回答带引用编号 `[n]`，点击引用可以看到原文块及其前后相邻块，目标块高亮。同一套知识库也可以通过 MCP Server 提供给 Claude Desktop 等客户端调用。
+面向软件与 SaaS 企业的技术支持、实施人员及产品使用者，依据产品文档回答使用、部署与排障问题。上传 PDF / Markdown / TXT 文档后，可以基于文档提问。回答带引用编号 `[n]`，点击引用可以看到原文块及其前后相邻块，目标块高亮。同一套知识库也可以通过 MCP Server 提供给 Claude Desktop 等客户端调用。
 
 在线体验：<https://suming.work>（开放注册，需完成邮箱验证后登录）
 
+本分支新增技术支持首期能力：多轮检索改写、最多两个澄清问题、结构化回答状态、20 篇示范资料与 12 题评测草稿。尚未运行真实模型行业评测；线上地址的功能取决于已部署的镜像。详见 [行业化说明](docs/saas-support/README.md)。
+
 ## 功能
 
-- **文档入库**：上传后自动解析、切分、向量化并写入索引。仓库自带 `data/corpus/` 中的 6 篇技术文档。
+- **文档入库**：支持批量上传，默认每批最多 10 个、单文件 50 MB、合计 100 MB，逐文件展示结果。PDF / MD / TXT 自动解析、切分、向量化并写入索引。上传限制可配置，见 [批量上传与部署说明](docs/saas-support/batch-upload.md)。仓库自带 `data/corpus/` 中的 6 篇技术文档。
 - **带引用的问答**：回答中的 `[n]` 对应引用来源。引用可以定位到原文块，并显示前后相邻块。
-- **多轮会话**：会话保存在服务端。追问时带入最近 5 轮（`CHAT_HISTORY_TURNS`），被拒答的轮次不计入上下文。
+- **技术支持回答**：默认 `support_answer_v3`，区分已回答、部分可答、待补充信息、资料不足、资料冲突；事实回答要求有效引用编号，引用是否支持结论仍需语义复核。
+- **多轮会话**：会话保存在服务端。追问时带入最近 5 轮（`CHAT_HISTORY_TURNS`），被拒答的轮次不计入上下文。支持模式结合历史改写检索查询，8 秒超时或格式校验失败时回退原问题；澄清问题会保存并带入下一轮。
 - **用户隔离**：每个用户的文档、会话、检索结果互不可见。语料库文档对所有用户共享。
 - **注册与登录**：开放注册，邮箱验证链接由阿里云 DirectMail 发送。登录态是 HMAC 签名的 httpOnly cookie。
 - **找回密码**：输入注册邮箱，收到 6 位验证码（10 分钟有效，错误 5 次作废），验证后设置新密码。
@@ -34,7 +37,7 @@ flowchart LR
   S -.-> T[LangFuse<br/>Trace]
 ```
 
-问答管线（线上）：问题经 FAISS 取回 `RAG_RETRIEVE_K=20` 条，取前 `RAG_FINAL_K=5` 条作为上下文，连同会话历史交给 DeepSeek 生成，再把 `[n]` 映射回引用，最后写入会话。
+本分支默认问答管线：有历史时先进行一次独立查询改写，再经 FAISS 取回 `RAG_RETRIEVE_K=20` 条，取前 `RAG_FINAL_K=5` 条作为上下文，连同会话历史交给 DeepSeek 生成，再把 `[n]` 映射回引用，最后写入会话。支持模式会校验 JSON 状态和实际上下文引用；`rag_context_cited` 保留为通用对照。
 
 Agentic 链路（离线评测与 Agent 实验）：
 
@@ -59,6 +62,8 @@ prepare → classify ─┬─ chitchat ─────────────�
 | 部署 | Docker Compose、GitHub Actions（手动触发）、自托管 Runner、阿里云 ECS 与 ACR、nginx、acme.sh（DNS-01） |
 
 ## 指标
+
+以下为行业化改动之前的通用实验数据，不代表技术支持首期效果。技术支持评测草稿尚待真实运行与人工复核。
 
 以下数据来自自建评测集：60 题，其中 50 题可答、10 题为负样本（语料中没有答案，期望拒答）。判官为 DeepSeek。所有对比都是同一批次、同一判官缓存下得到的。
 
@@ -102,6 +107,8 @@ Agentic 在忠实度和幻觉率上更好，代价是延迟约 2.9 倍，误拒�
 
 ## 快速开始（本地）
 
+Windows PowerShell 的完整步骤见 [本地启动指南](docs/saas-support/local-development.md)。
+
 环境要求：Python 3.11+、Docker、Node.js 20.9+（Next.js 16 的要求）。
 
 ```bash
@@ -118,17 +125,21 @@ cp .env.example .env
 #    本机 http 调试需要把 AUTH_COOKIE_SECURE 改为 False
 #    MAIL_BACKEND 保持 log：验证链接会打印到后端日志，仅限本机使用
 
-# 4. 构建向量索引
-python scripts/build_index.py --verify
-
-# 5. 启动后端
+# 4. 启动后端（索引为空时可以注册登录，问答会提示尚未就绪）
 uvicorn app.main:app --reload --port 8000
 
-# 6. 启动前端（另开一个终端）
+# 5. 启动前端（另开一个终端）
 cd web && npm install && npm run dev
 ```
 
-打开 <http://localhost:3000>。注册后，验证链接在后端日志中。也可以用迁移自带的 `demo_user` 账号，通过 `python scripts/set_password.py` 设置密码后直接登录。
+打开 <http://localhost:3000>。注册后，验证链接在后端日志中。新数据库的迁移不会创建演示账号。构建公共语料索引前，将 `.env` 的 `DEFAULT_USERNAME` 设置为已经存在的语料管理账号用户名（默认 `demo_user`；也可使用已注册账号），在仓库根目录的新 Python 终端运行：
+
+```bash
+python scripts/build_index.py --verify
+# 行业示范资料另行显式导入，详见 docs/saas-support/README.md
+```
+
+构建后重启后端加载索引。公共语料拥有者不能注销，建议使用专用管理账号。已有 `demo_user` 可通过 `python scripts/set_password.py` 设置密码。
 
 运行测试：
 
@@ -224,7 +235,8 @@ tests/          pytest 用例
 
 ## 已知问题
 
-- **追问的检索只用本轮问题**。「它有什么用」这类依赖上文的追问可能检索不到相关内容。查询改写尚未实现。
+- **查询改写仍可能理解错误**。支持模式有历史改写及失败回退，通用对照仍只检索本轮问题；错误码保护为字符串校验，不是语义正确性保证。
+- **产品与版本暂无硬过滤**。当前仍为本人文档 + 公共资料的用户隔离，没有组织级权限；版本适用性依赖资料和回答规则。
 - **Agentic 链路未接入线上问答**，目前只用于评测。
 - **对抗测试集（20 题）尚未自动评分**，目前靠人工判读。
 - **`web_search` 默认是本地语料实现**，不能联网。接入真实搜索 API 需要实现 `SearchBackend` 协议。
@@ -241,6 +253,7 @@ MIT，见 [LICENSE](LICENSE)。
 
 ## 相关文档
 
+- [docs/saas-support/README.md](docs/saas-support/README.md)：技术支持定位、示范资料导入、评测与上线验收
 - [docs/week15/README.md](docs/week15/README.md)：本周任务、上线清单、验证记录、部署踩坑
 - [docs/week14/README.md](docs/week14/README.md)：MCP Server 设计与 Claude Desktop 配置说明
 - [docs/week13/README.md](docs/week13/README.md)：Agentic RAG 实现、工具安全与对抗测试集

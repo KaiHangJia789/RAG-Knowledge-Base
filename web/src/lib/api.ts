@@ -47,12 +47,16 @@ export type ChunkContext = {
   items: ChunkItem[];
 };
 
+export type AnswerStatus = "answered" | "partial" | "needs_clarification" | "insufficient_evidence" | "conflicting_evidence";
+
 export type RagAnswer = {
   question: string;
   answer: string;
   citations: Citation[];
   refused: boolean;
   refusal_reason: string | null;
+  answer_status?: AnswerStatus | null;
+  clarifying_questions?: string[];
   latency_ms: number;
   trace_url: string | null;
 };
@@ -64,6 +68,8 @@ export type SessionMessage = {
   citations: Citation[];
   refused: boolean;
   refusal_reason: string | null;
+  answer_status?: AnswerStatus | null;
+  clarifying_questions?: string[];
   trace_url: string | null;
 };
 
@@ -118,10 +124,42 @@ export function uploadDocument(file: File) {
   return request<Document>("/upload", { method: "POST", body: form });
 }
 
+export type UploadLimits = {
+  max_files: number;
+  max_file_size_mb: number;
+  max_total_size_mb: number;
+  allowed_extensions: string[];
+};
+
+export type UploadResult = {
+  filename: string;
+  success: boolean;
+  message: string;
+  document: Document | null;
+};
+
+export function getUploadLimits() {
+  return request<UploadLimits>("/upload/limits");
+}
+
+export function uploadDocuments(files: File[]) {
+  const form = new FormData();
+  files.forEach((file) => form.append("files", file));
+  return request<{ items: UploadResult[] }>("/upload/batch", { method: "POST", body: form });
+}
+
 export function deleteDocument(id: string) {
   return request<unknown>(`/documents/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+}
+
+export function getDocumentContent(id: string) {
+  return request<{
+    document_id: string;
+    filename: string;
+    items: ChunkItem[];
+  }>(`/documents/${encodeURIComponent(id)}/content`);
 }
 
 // 引用定位：取被引用的 chunk 及前后相邻块，目标块由 is_target 标出

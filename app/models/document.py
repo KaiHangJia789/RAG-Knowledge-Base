@@ -6,6 +6,8 @@ from datetime import datetime
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator
 
+from app.models.qa import ChunkItem
+
 
 class DocumentStatus(str, Enum):
     """文档处理状态"""
@@ -62,3 +64,10 @@ class DocumentInfo(BaseModel):
     status: DocumentStatus
     created_at: datetime
     updated_at: datetime
+
+
+class DocumentContent(BaseModel):
+    """文档可读正文（按顺序返回已存储的分块，不包含内部路径）"""
+    document_id: str
+    filename: str
+    items: list[ChunkItem] = Field(default_factory=list)

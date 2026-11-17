@@ -26,19 +26,18 @@ router = APIRouter(prefix="/qa", tags=["问答"])
     description="""
 基于已索引的文档回答问题，返回答案与引用来源。
 
-**流程**: 向量检索 → 相似度阈值过滤 → 装配带编号上下文 → LLM 生成 → 解析引用
+**流程**: 支持模式可先结合历史改写查询 → 权限范围内检索 → 阈值过滤 → 装配上下文 → 生成与状态、引用校验
 
-**拒答**: 以下情况会拒答而不调用 LLM（`refused=true`）
-- 索引未构建
-- 检索结果全部低于 `min_score` 阈值
-- LLM 判断上下文不足以回答
+**拒答**（`refused=true`）: 索引未构建、检索无命中、资料不足或支持输出校验失败。
+索引未就绪不调用模型；无检索命中不调用回答生成模型，但可能已经调用查询改写。
+**澄清**: `answer_status=needs_clarification`，返回 1～2 个澄清问题，不视为拒答。
 
 **引用**: `citations[].index` 对应答案中的 `[n]` 标记，
 `chunk_id` 可用于 `GET /api/v1/qa/chunks/{chunk_id}` 定位原文。
 
 **会话**: 传入 `session_id` 时，问题与回答（含完整引用）会追加到该会话，
 并把该会话最近几轮的问答作为多轮上下文交给模型（被拒答的轮次不计入）。
-检索仍只使用本轮问题。会话不存在时直接返回 404，不调用 LLM。
+技术支持模式会结合历史改写检索问题；失败时使用原问题。会话不存在时直接返回 404，不调用 LLM。
     """,
     response_model=APIResponse[dict],
 )
@@ -73,7 +72,7 @@ async def ask_question(
 
     return APIResponse(
         code=200,
-        message="已回答" if not result.refused else "已拒答",
+        message="待补充信息" if result.answer_status == "needs_clarification" else ("已回答" if not result.refused else "资料不足"),
         data=result.model_dump(mode="json"),
     )
 

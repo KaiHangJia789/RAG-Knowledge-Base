@@ -4,18 +4,7 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { register } from "@/lib/api";
 import { PasswordInput } from "@/components/password-input";
-
-const PAGE_STYLE = {
-  minHeight: "100vh",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "#fafafa",
-  color: "#171717",
-  padding: 24,
-} as const;
-
-const INPUT_STYLE = { padding: 8, border: "1px solid #d0d0d0", borderRadius: 6, font: "inherit" } as const;
+import { AuthLayout } from "@/components/auth-layout";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
@@ -46,32 +35,26 @@ export default function RegisterPage() {
   }
 
   return (
-    <main style={PAGE_STYLE}>
+    <AuthLayout
+      title={message ? "查收验证邮件" : "创建账号"}
+      subtitle={message ? "完成邮箱验证，即可开启你的知识空间。" : "让文档成为知识，让提问找到依据。"}
+    >
       <form
         onSubmit={handleSubmit}
-        style={{
-          width: 340,
-          padding: 24,
-          background: "#fff",
-          border: "1px solid #e5e5e5",
-          borderRadius: 8,
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
+        className="auth-form"
+        style={{ display: "grid", gap: 20 }}
       >
-        <h1 style={{ fontSize: 20 }}>注册</h1>
-
         {message ? (
           <>
-            <p style={{ color: "#1a7f37", fontSize: 14 }}>{message}</p>
-            <p style={{ fontSize: 14 }}>
-              没收到？回到 <Link href="/login">登录页</Link> 重新发送。
+            <p role="status" className="success-message">{message}</p>
+            <Link href="/login" className="primary-button">返回登录</Link>
+            <p className="auth-links muted">
+              没收到邮件？可在 <Link href="/login" className="text-button">登录页</Link> 重新发送。
             </p>
           </>
         ) : (
           <>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 14 }}>
+            <label className="field">
               邮箱
               <input
                 type="email"
@@ -79,34 +62,38 @@ export default function RegisterPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
                 required
-                style={INPUT_STYLE}
+                placeholder="输入常用邮箱"
               />
             </label>
 
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 14 }}>
-              密码（至少 10 位，需同时包含字母和数字）
+            <div className="field">
+              <label htmlFor="register-password">密码</label>
               <PasswordInput
+                id="register-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="new-password"
                 required
-                style={INPUT_STYLE}
+                placeholder="设置登录密码"
+                aria-describedby="register-password-help"
               />
-            </label>
+              <p id="register-password-help" className="muted" style={{ fontSize: 12 }}>至少 10 位，需同时包含字母和数字。</p>
+            </div>
 
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 14 }}>
-              确认密码
+            <div className="field">
+              <label htmlFor="register-confirm">确认密码</label>
               <PasswordInput
+                id="register-confirm"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 autoComplete="new-password"
                 required
-                style={INPUT_STYLE}
+                placeholder="再次输入密码"
               />
-            </label>
+            </div>
 
             {error && (
-              <p role="alert" style={{ color: "#b00020", fontSize: 14 }}>
+              <p role="alert" className="error-message">
                 {error}
               </p>
             )}
@@ -114,17 +101,17 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={submitting || !email || !password || !confirm}
-              style={{ padding: "8px 0", cursor: "pointer" }}
+              className="primary-button"
             >
-              {submitting ? "提交中…" : "注册"}
+              {submitting ? "创建中…" : "创建账号"}
             </button>
 
-            <p style={{ fontSize: 14, textAlign: "center" }}>
-              已有账号？<Link href="/login">登录</Link>
+            <p className="auth-links muted">
+              已有账号？ <Link href="/login" className="text-button">登录</Link>
             </p>
           </>
         )}
       </form>
-    </main>
+    </AuthLayout>
   );
 }

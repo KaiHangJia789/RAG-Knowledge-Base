@@ -3,7 +3,7 @@
 使用 Pydantic Settings 管理所有环境变量和应用配置
 """
 from pathlib import Path
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 # 关键：把 .env 加载进 os.environ。
@@ -26,7 +26,9 @@ class Settings(BaseSettings):
 
     # --- 文件上传 ---
     UPLOAD_DIR: Path = Path("uploads")
-    MAX_UPLOAD_SIZE_MB: int = 50
+    MAX_UPLOAD_SIZE_MB: int = Field(default=50, ge=1)
+    MAX_UPLOAD_BATCH_FILES: int = Field(default=10, ge=1)
+    MAX_UPLOAD_BATCH_SIZE_MB: int = Field(default=100, ge=1)
     ALLOWED_EXTENSIONS: set[str] = {
         ".pdf", ".txt", ".md", ".docx", ".csv", ".json", ".xml"
     }
@@ -76,7 +78,7 @@ class Settings(BaseSettings):
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str = "raguser"
-    POSTGRES_PASSWORD: str = ""   # 必须通过环境变量或 .env 提供
+    POSTGRES_PASSWORD: str = "ragpass"
     POSTGRES_DB: str = "ragdb"
 
     @property

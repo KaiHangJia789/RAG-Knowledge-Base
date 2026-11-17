@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { HttpError, login, resendVerification } from "@/lib/api";
 import { PasswordInput } from "@/components/password-input";
+import { AuthLayout } from "@/components/auth-layout";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -50,65 +51,49 @@ export default function LoginPage() {
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#fafafa",
-        color: "#171717",
-        padding: 24,
-      }}
-    >
+    <AuthLayout title="欢迎回来" subtitle="登录知序，继续整理知识与探索答案。">
       <form
         onSubmit={handleSubmit}
-        style={{
-          width: 320,
-          padding: 24,
-          background: "#fff",
-          border: "1px solid #e5e5e5",
-          borderRadius: 8,
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
+        className="auth-form"
+        style={{ display: "grid", gap: 20 }}
       >
-        <h1 style={{ fontSize: 20 }}>RAG 知识库</h1>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 14 }}>
+        <label className="field">
           邮箱或用户名
           <input
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
             autoComplete="username"
             required
-            style={{ padding: 8, border: "1px solid #d0d0d0", borderRadius: 6, font: "inherit" }}
+            placeholder="输入邮箱或用户名"
           />
         </label>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 14 }}>
-          密码
+        <div className="field">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <label htmlFor="login-password">密码</label>
+            <Link href="/forgot" className="text-button">忘记密码？</Link>
+          </div>
           <PasswordInput
+            id="login-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
             required
-            style={{ padding: 8, border: "1px solid #d0d0d0", borderRadius: 6, font: "inherit" }}
+            placeholder="输入密码"
           />
-        </label>
+        </div>
 
         {error && (
-          <p role="alert" style={{ color: "#b00020", fontSize: 14 }}>
+          <p role="alert" className="error-message">
             {error}
           </p>
         )}
-        {notice && <p style={{ color: "#1a7f37", fontSize: 14 }}>{notice}</p>}
+        {notice && <p role="status" className="success-message">{notice}</p>}
 
         <button
           type="submit"
           disabled={submitting || !identifier || !password}
-          style={{ padding: "8px 0", cursor: "pointer" }}
+          className="primary-button"
         >
           {submitting ? "登录中…" : "登录"}
         </button>
@@ -118,19 +103,16 @@ export default function LoginPage() {
             type="button"
             onClick={handleResend}
             disabled={submitting || !identifier}
-            style={{ padding: "6px 0", cursor: "pointer", fontSize: 14 }}
+            className="secondary-button"
           >
             重新发送验证邮件
           </button>
         )}
 
-        <p style={{ fontSize: 14, textAlign: "center" }}>
-          没有账号？<Link href="/register">注册</Link>
-        </p>
-        <p style={{ fontSize: 14, textAlign: "center" }}>
-          <Link href="/forgot">忘记密码？</Link>
+        <p className="auth-links muted">
+          还没有账号？ <Link href="/register" className="text-button">创建账号</Link>
         </p>
       </form>
-    </main>
+    </AuthLayout>
   );
 }

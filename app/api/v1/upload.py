@@ -10,9 +10,10 @@ from fastapi import APIRouter, UploadFile, File
 from app.config import settings
 from app.dependencies.auth import DocumentServiceDep, ParsingServiceDep
 from app.dependencies.login import CurrentUserDep
-from app.exceptions.handlers import FileValidationError
+from app.exceptions.handlers import AppException, FileValidationError
 from app.models.document import DocumentResponse, DocumentStatus
 from app.models.response import APIResponse
+from app.models.upload import BatchUploadResult, UploadLimits, UploadResult
 
 logger = logging.getLogger("rag_api.upload")
 
@@ -20,6 +21,56 @@ router = APIRouter(prefix="/upload", tags=["文件上传"])
 
 # 需要解析的文件类型
 PARSEABLE_TYPES = {".pdf", ".md", ".txt"}
+
+
+@router.get("/limits", response_model=APIResponse[UploadLimits], summary="查询上传限制")
+async def upload_limits():
+    return APIResponse(code=200, message="查询成功", data=UploadLimits(
+        max_files=settings.MAX_UPLOAD_BATCH_FILES,
+        max_file_size_mb=settings.MAX_UPLOAD_SIZE_MB,
+        max_total_size_mb=settings.MAX_UPLOAD_BATCH_SIZE_MB,
+        allowed_extensions=sorted(settings.ALLOWED_EXTENSIONS),
+    ))
+
+
+@router.post("/batch", response_model=APIResponse[BatchUploadResult], summary="批量上传文档")
+async def upload_batch(
+    files: list[UploadFile] = File(...),
+    doc_service: DocumentServiceDep = None,
+    parsing_service: ParsingServiceDep = None,
+    user: CurrentUserDep = None,
+):
+    if not files or len(files) > settings.MAX_UPLOAD_BATCH_FILES:
+        raise AppException(f"每批请选择 1 至 {settings.MAX_UPLOAD_BATCH_FILES} 个文件")
+
+    # 按实际字节预检整批，超限时不创建文档；分块扫描限制内存占用。
+    total = 0
+    for file in files:
+        size = 0
+        while chunk := await file.read(64 * 1024):
+            size += len(chunk)
+            total += len(chunk)
+            if size > settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+                raise AppException(f"{file.filename} 超过单文件 {settings.MAX_UPLOAD_SIZE_MB} MB 限制")
+            if total > settings.MAX_UPLOAD_BATCH_SIZE_MB * 1024 * 1024:
+                raise AppException(f"每批文件合计不能超过 {settings.MAX_UPLOAD_BATCH_SIZE_MB} MB")
+        await file.seek(0)
+
+    items = []
+    for file in files:
+        try:
+            response = await _process_document(file, doc_service, parsing_service, user)
+            doc = response.data
+            items.append(UploadResult(filename=file.filename or "", success=doc.status != DocumentStatus.FAILED,
+                                      message=response.message, document=doc))
+        except AppException as exc:
+            if exc.code in (401, 403):
+                raise
+            items.append(UploadResult(filename=file.filename or "", success=False, message=exc.detail or exc.message))
+        except Exception:
+            logger.exception("批量上传文件失败: %s", file.filename)
+            items.append(UploadResult(filename=file.filename or "", success=False, message="上传失败，请刷新文档列表确认后重试"))
+    return APIResponse(code=200, message="批量处理完成", data=BatchUploadResult(items=items))
 
 
 async def _index_uploaded(document_id: str, filename: str, owner_user_id: str) -> None:
@@ -80,7 +131,7 @@ async def _index_uploaded(document_id: str, filename: str, owner_user_id: str) -
 
 **支持的格式**: PDF, TXT, MD, DOCX, CSV, JSON, XML
 **自动解析**: PDF/MD/TXT 格式上传后自动提取文本内容并写入 chunks 表
-**大小限制**: 50MB
+**大小限制**: 由 MAX_UPLOAD_SIZE_MB 配置，当前限制可查询 /upload/limits
 
 上传成功后返回文档的元信息。解析过程异步进行，状态字段表示处理进度：
 - uploaded → 上传完成
@@ -101,8 +152,15 @@ async def upload_document(
     parsing_service: ParsingServiceDep = None,
     user: CurrentUserDep = None,
 ):
+    return await _process_document(file, doc_service, parsing_service, user)
+
+
+async def _process_document(file, doc_service, parsing_service, user):
     # 1. 读取文件内容
-    content = await file.read()
+    max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    content = await file.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise FileValidationError(f"单文件不能超过 {settings.MAX_UPLOAD_SIZE_MB} MB")
 
     # 2. 校验文件名
     if not file.filename:
@@ -148,13 +206,14 @@ async def upload_document(
     if final_status != doc.status:
         try:
             await doc_service.update_status(doc.id, final_status)
-            doc.status = final_status
         except Exception as e:
             # 状态写回失败不该让整个上传请求失败——文件和 DB 记录都已就绪
             logger.error(
                 "状态写回失败: doc_id=%s 目标状态=%s: %s（文档已上传，DB 中仍为 %s）",
                 doc.id, final_status.value, e, doc.status.value,
             )
+        # 返回本次处理结果；持久化异常不能把解析失败误报为成功。
+        doc.status = final_status
 
     # 6. 写入向量索引（Week10）—— 让新上传的文档立即可检索
     #    失败只告警不阻断：文档已上传成功，索引可由 scripts/build_index.py 重建

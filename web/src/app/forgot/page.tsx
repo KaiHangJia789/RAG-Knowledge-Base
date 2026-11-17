@@ -4,20 +4,7 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { forgotPassword, resetPassword } from "@/lib/api";
 import { PasswordInput } from "@/components/password-input";
-
-const PAGE_STYLE = {
-  minHeight: "100vh",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "#fafafa",
-  color: "#171717",
-  padding: 24,
-} as const;
-
-const INPUT_STYLE = { padding: 8, border: "1px solid #d0d0d0", borderRadius: 6, font: "inherit" } as const;
-
-const FIELD_STYLE = { display: "flex", flexDirection: "column", gap: 4, fontSize: 14 } as const;
+import { AuthLayout } from "@/components/auth-layout";
 
 type Step = "email" | "reset";
 
@@ -83,33 +70,26 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <main style={PAGE_STYLE}>
+    <AuthLayout
+      title={done ? "密码已更新" : step === "email" ? "找回密码" : "设置新密码"}
+      subtitle={done ? "使用新密码登录，继续你的知识探索。" : step === "email" ? "通过注册邮箱验证身份，重新设置密码。" : "输入邮箱验证码，为账号设置新密码。"}
+    >
       <form
         onSubmit={handleSubmit}
-        style={{
-          width: 340,
-          padding: 24,
-          background: "#fff",
-          border: "1px solid #e5e5e5",
-          borderRadius: 8,
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-        }}
+        className="auth-form"
+        style={{ display: "grid", gap: 20 }}
       >
-        <h1 style={{ fontSize: 20 }}>找回密码</h1>
-
         {done ? (
           <>
-            <p style={{ color: "#1a7f37", fontSize: 14 }}>密码已重置，请使用新密码登录。</p>
-            <Link href="/login" style={{ fontSize: 14, textAlign: "center" }}>
+            <p role="status" className="success-message">密码已重置，请使用新密码登录。</p>
+            <Link href="/login" className="primary-button">
               前往登录
             </Link>
           </>
         ) : (
           <>
             {step === "email" && (
-              <label style={FIELD_STYLE}>
+              <label className="field">
                 注册邮箱
                 <input
                   type="email"
@@ -117,59 +97,64 @@ export default function ForgotPasswordPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
                   required
-                  style={INPUT_STYLE}
+                  placeholder="输入注册时使用的邮箱"
                 />
               </label>
             )}
 
             {step === "reset" && (
               <>
-                <p style={{ fontSize: 14, color: "#555" }}>
-                  验证码已发送至 <strong>{email.trim()}</strong>
+                <p className="muted" style={{ overflowWrap: "anywhere" }}>
+                  验证邮箱：<strong>{email.trim()}</strong>
                 </p>
 
-                <label style={FIELD_STYLE}>
-                  验证码（6 位数字）
+                <label className="field">
+                  邮箱验证码
                   <input
                     value={code}
                     onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                     inputMode="numeric"
                     autoComplete="one-time-code"
                     required
-                    style={{ ...INPUT_STYLE, letterSpacing: 4 }}
+                    placeholder="6 位数字"
+                    style={{ letterSpacing: 4 }}
                   />
                 </label>
 
-                <label style={FIELD_STYLE}>
-                  新密码（至少 10 位，需同时包含字母和数字）
+                <div className="field">
+                  <label htmlFor="reset-password">新密码</label>
                   <PasswordInput
+                    id="reset-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     autoComplete="new-password"
                     required
-                    style={INPUT_STYLE}
+                    placeholder="设置新密码"
+                    aria-describedby="reset-password-help"
                   />
-                </label>
+                  <p id="reset-password-help" className="muted" style={{ fontSize: 12 }}>至少 10 位，需同时包含字母和数字。</p>
+                </div>
 
-                <label style={FIELD_STYLE}>
-                  确认新密码
+                <div className="field">
+                  <label htmlFor="reset-confirm">确认新密码</label>
                   <PasswordInput
+                    id="reset-confirm"
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}
                     autoComplete="new-password"
                     required
-                    style={INPUT_STYLE}
+                    placeholder="再次输入新密码"
                   />
-                </label>
+                </div>
               </>
             )}
 
             {error && (
-              <p role="alert" style={{ color: "#b00020", fontSize: 14 }}>
+              <p role="alert" className="error-message">
                 {error}
               </p>
             )}
-            {notice && <p style={{ color: "#1a7f37", fontSize: 14 }}>{notice}</p>}
+            {notice && <p role="status" className="success-message">{notice}</p>}
 
             <button
               type="submit"
@@ -178,7 +163,7 @@ export default function ForgotPasswordPage() {
                 (step === "email" && !email) ||
                 (step === "reset" && (!code || !password || !confirm))
               }
-              style={{ padding: "8px 0", cursor: "pointer" }}
+              className="primary-button"
             >
               {submitting
                 ? "提交中…"
@@ -192,18 +177,18 @@ export default function ForgotPasswordPage() {
                 type="button"
                 onClick={() => void requestCode()}
                 disabled={submitting}
-                style={{ padding: "6px 0", cursor: "pointer", fontSize: 14 }}
+                className="secondary-button"
               >
                 重新发送验证码
               </button>
             )}
 
-            <p style={{ fontSize: 14, textAlign: "center" }}>
-              想起密码了？<Link href="/login">返回登录</Link>
+            <p className="auth-links muted">
+              想起密码了？ <Link href="/login" className="text-button">返回登录</Link>
             </p>
           </>
         )}
       </form>
-    </main>
+    </AuthLayout>
   );
 }

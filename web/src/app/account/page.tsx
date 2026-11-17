@@ -53,60 +53,52 @@ export default function AccountPage() {
   }
 
   return (
-    <div style={{ padding: 32, maxWidth: 560, display: "flex", flexDirection: "column", gap: 16 }}>
-      <h1 style={{ fontSize: 20 }}>注销账号</h1>
+    <section className="account-page" aria-labelledby="account-title" style={{ display: "grid", gap: 24 }}>
+      <header style={{ display: "grid", gap: 8 }}>
+        <p className="eyebrow">账号管理</p>
+        <h1 id="account-title" className="page-heading">注销账号</h1>
+        <p className="muted">请先通过邮箱验证身份，再确认注销。</p>
+      </header>
 
       <div
         role="note"
-        style={{
-          border: "1px solid #f0c36d",
-          background: "#fff8e6",
-          borderRadius: 6,
-          padding: 12,
-          fontSize: 14,
-          lineHeight: 1.6,
-        }}
+        className="danger-note"
       >
         注销后将<strong>永久删除</strong>以下内容，且无法恢复：你的账号、你上传的全部文档及其向量索引、
         全部会话记录。
       </div>
 
-      <form onSubmit={handleDelete} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <form onSubmit={handleDelete} className="auth-form" style={{ display: "grid", gap: 20 }}>
         {!codeSent ? (
           <button
             type="button"
             onClick={() => void sendCode()}
             disabled={submitting}
-            style={{ padding: "8px 16px", alignSelf: "flex-start", cursor: "pointer" }}
+            className="secondary-button"
+            style={{ justifySelf: "start" }}
           >
             {submitting ? "发送中…" : "发送验证码到我的邮箱"}
           </button>
         ) : (
           <>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 14 }}>
-              验证码（6 位数字）
+            <label className="field">
+              邮箱验证码
               <input
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 required
-                style={{ padding: 8, border: "1px solid #d0d0d0", borderRadius: 6, font: "inherit", letterSpacing: 4, maxWidth: 220 }}
+                placeholder="6 位数字"
+                style={{ letterSpacing: 4, maxWidth: 220, width: "100%" }}
               />
             </label>
 
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
               <button
                 type="submit"
                 disabled={submitting || code.length !== 6}
-                style={{
-                  padding: "8px 16px",
-                  cursor: "pointer",
-                  background: "#b00020",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 6,
-                }}
+                className="danger-button"
               >
                 {submitting ? "注销中…" : "确认注销账号"}
               </button>
@@ -114,7 +106,7 @@ export default function AccountPage() {
                 type="button"
                 onClick={() => void sendCode()}
                 disabled={submitting}
-                style={{ padding: "6px 0", cursor: "pointer", fontSize: 14, background: "none", border: "none", color: "#555" }}
+                className="text-button"
               >
                 重新发送验证码
               </button>
@@ -123,18 +115,18 @@ export default function AccountPage() {
         )}
 
         {error && (
-          <p role="alert" style={{ color: "#b00020", fontSize: 14 }}>
+          <p role="alert" className="error-message">
             {error}
           </p>
         )}
-        {notice && <p style={{ color: "#1a7f37", fontSize: 14 }}>{notice}</p>}
+        {notice && <p role="status" className="success-message">{notice}</p>}
       </form>
 
-      <p style={{ fontSize: 14 }}>
-        <Link href="/" style={{ color: "#555", textDecoration: "underline" }}>
-          返回首页
+      <p>
+        <Link href="/" className="text-button">
+          返回工作台
         </Link>
       </p>
-    </div>
+    </section>
   );
 }

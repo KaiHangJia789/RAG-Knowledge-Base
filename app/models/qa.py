@@ -1,4 +1,6 @@
 """问答接口的请求/响应模型"""
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -25,8 +27,8 @@ class QARequest(BaseModel):
         default=0.0, ge=-1.0, le=1.0,
         description="相似度阈值，低于此值的检索结果被丢弃；0 = 不过滤",
     )
-    prompt_name: str = Field(
-        default="rag_context_cited",
+    prompt_name: Literal["support_answer_v1", "support_answer_v2", "support_answer_v3", "rag_context_cited"] = Field(
+        default="support_answer_v3",
         description="使用的 prompt 模板名",
     )
     document_id: str | None = Field(

@@ -4,10 +4,12 @@
 """
 from fastapi import APIRouter, Query
 
+from app.config import settings
+from app.db.repositories.chunk_repo import ChunkRepository
 from app.dependencies.login import CurrentUserDep
-from app.dependencies.auth import DocumentServiceDep
+from app.dependencies.auth import DbDep, DocumentServiceDep
 from app.exceptions.handlers import DocumentNotFoundError
-from app.models.document import DocumentInfo, DocumentResponse
+from app.models.document import DocumentContent, DocumentInfo, DocumentResponse
 from app.models.requests import DocumentSearchParams
 from app.models.response import APIResponse, PaginatedData
 
@@ -84,6 +86,43 @@ async def get_document(
         message="查询成功",
         data=doc,
     )
+
+
+@router.get(
+    "/{doc_id}/content",
+    summary="获取文档可读正文",
+    description="按分块顺序返回当前策略的已解析正文；暂无正文时返回空列表",
+    response_model=APIResponse[DocumentContent],
+)
+async def get_document_content(
+    doc_id: str,
+    db: DbDep = None,
+    doc_service: DocumentServiceDep = None,
+    user: CurrentUserDep = None,
+):
+    doc = await doc_service.get_document(doc_id, user.user_id)
+    if doc is None:
+        raise DocumentNotFoundError(doc_id)
+
+    repo = ChunkRepository()
+    async with db.pool.acquire() as conn:
+        rows = await repo.fetch_by_document(conn, doc_id, settings.CHUNK_STRATEGY)
+
+    content = DocumentContent(
+        document_id=doc_id,
+        filename=doc.filename,
+        items=[
+            {
+                "chunk_id": str(row["id"]),
+                "chunk_index": row["chunk_index"],
+                "text": row["chunk_text"],
+                "page_number": row["page_number"],
+                "is_target": False,
+            }
+            for row in rows
+        ],
+    )
+    return APIResponse(code=200, message="查询成功", data=content)
 
 
 @router.get(

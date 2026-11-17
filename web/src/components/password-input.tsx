@@ -13,18 +13,19 @@ export function PasswordInput(
   props: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { style?: CSSProperties },
 ) {
   const [visible, setVisible] = useState(false);
-  const { style, ...rest } = props;
+  const { style, className, ...rest } = props;
 
   return (
-    <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+    <div className="password-field" style={{ position: "relative", display: "flex", alignItems: "center", minWidth: 0 }}>
       <input
         {...rest}
         type={visible ? "text" : "password"}
-        className="password-input"
+        className={["password-input", className].filter(Boolean).join(" ")}
         style={{
           ...style,
           width: "100%",
-          paddingRight: 36,
+          minWidth: 0,
+          paddingRight: 48,
         }}
       />
       <button
@@ -33,19 +34,21 @@ export function PasswordInput(
         aria-label={visible ? "隐藏密码" : "显示密码"}
         aria-pressed={visible}
         title={visible ? "隐藏密码" : "显示密码"}
+        className="password-toggle"
         style={{
           position: "absolute",
-          right: 4,
+          right: 6,
           top: "50%",
           transform: "translateY(-50%)",
-          width: 28,
-          height: 28,
+          width: 36,
+          height: 36,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
           border: "none",
           background: "transparent",
-          color: "#666",
+          color: "var(--muted, var(--foreground))",
+          borderRadius: 6,
           cursor: "pointer",
           padding: 0,
         }}
